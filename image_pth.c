@@ -10,6 +10,16 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
+#include <pthread.h>
+
+// A structure to pass arguments to the thread
+struct ThreadArg {
+    Image* srcImage;
+    Image* destImage;
+    Matrix algorithm;
+    int row;
+};
+
 //An array of kernel matrices to be used for image convolution.  
 //The indexes of these match the enumeration from the header file. ie. algorithms[BLUR] returns the kernel corresponding to a box blur.
 Matrix algorithms[]={
@@ -51,6 +61,57 @@ uint8_t getPixelValue(Image* srcImage,int x,int y,int bit,Matrix algorithm){
     return result;
 }
 
+// NEW FUNCTION
+void* convoluteRow(void* arg) {
+    struct ThreadArg* tArg = (struct ThreadArg*)arg;
+    int pix, bit, span;
+
+    span = tArg->srcImage->bpp * tArg->srcImage->bpp;
+
+    for (pix = 0; pix < tArg->srcImage->width; pix++) {
+        for (bit = 0; bit < tArg->srcImage->bpp; bit++) {
+            tArg->destImage->data[Index(pix, tArg->row, tArg->srcImage->width, bit, tArg->srcImage->bpp)] =
+                getPixelValue(tArg->srcImage, pix, tArg->row, bit, tArg->algorithm);
+        }
+    }
+
+    // Exit the thread
+    pthread_exit(NULL);
+}
+// NEW FUNCTION
+
+// NEW FUNCTION
+void convolute(Image* srcImage, Image* destImage, Matrix algorithm) {
+    int row, span;
+    span = srcImage->bpp * srcImage->bpp;
+
+    // Create an array of thread handles
+    pthread_t* threads = (pthread_t*)malloc(srcImage->height * sizeof(pthread_t));
+
+    // Create an array of thread arguments
+    struct ThreadArg* tArgs = (struct ThreadArg*)malloc(srcImage->height * sizeof(struct ThreadArg));
+
+    // Start the threads
+    for (row = 0; row < srcImage->height; row++) {
+        tArgs[row].srcImage = srcImage;
+        tArgs[row].destImage = destImage;
+        tArgs[row].algorithm = algorithm;
+        tArgs[row].row = row;
+
+        pthread_create(&threads[row], NULL, convoluteRow, &tArgs[row]);
+    }
+
+    // Wait for the threads to finish
+    for (row = 0; row < srcImage->height; row++) {
+        pthread_join(threads[row], NULL);
+    }
+
+    free(threads);
+    free(tArgs);
+}
+// NEW FUNCITON
+
+/* OLD FUNCTION
 //convolute:  Applies a kernel matrix to an image
 //Parameters: srcImage: The image being convoluted
 //            destImage: A pointer to a  pre-allocated (including space for the pixel array) structure to receive the convoluted image.  It should be the same size as srcImage
@@ -67,6 +128,7 @@ void convolute(Image* srcImage,Image* destImage,Matrix algorithm){
         }
     }
 }
+//OLD FUNCTION*/
 
 //Usage: Prints usage information for the program
 //Returns: -1
