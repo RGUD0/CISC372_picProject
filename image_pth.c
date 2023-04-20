@@ -16,9 +16,12 @@
 struct ThreadArg {
     Image* srcImage;
     Image* destImage;
-    Matrix algorithm;
-    int row;
+//    Matrix algorithm;
+    int type;
 };
+
+// Create an array of thread arguments
+struct ThreadArg tArgs; // = (struct ThreadArg*)malloc(srcImage->height * sizeof(struct ThreadArg));
 
 //An array of kernel matrices to be used for image convolution.  
 //The indexes of these match the enumeration from the header file. ie. algorithms[BLUR] returns the kernel corresponding to a box blur.
@@ -63,15 +66,14 @@ uint8_t getPixelValue(Image* srcImage,int x,int y,int bit,Matrix algorithm){
 
 // NEW FUNCTION
 void* convoluteRow(void* arg) {
-    struct ThreadArg* tArg = (struct ThreadArg*)arg;
-    int pix, bit, span;
+    int bit, span;
+    long pix, piy = (long)arg;
+    span = tArgs.srcImage->bpp * tArgs.srcImage->bpp;
 
-    span = tArg->srcImage->bpp * tArg->srcImage->bpp;
-
-    for (pix = 0; pix < tArg->srcImage->width; pix++) {
-        for (bit = 0; bit < tArg->srcImage->bpp; bit++) {
-            tArg->destImage->data[Index(pix, tArg->row, tArg->srcImage->width, bit, tArg->srcImage->bpp)] =
-                getPixelValue(tArg->srcImage, pix, tArg->row, bit, tArg->algorithm);
+    for (pix = 0; pix < tArgs.srcImage->width; pix++) {
+        for (bit = 0; bit < tArgs.srcImage->bpp; bit++) {
+            tArgs.destImage->data[Index(pix, tArgs.type, tArgs.srcImage->width, bit, tArgs.srcImage->bpp)] =
+                getPixelValue(tArgs.srcImage, pix, piy, bit, algorithms[tArgs.type]);
         }
     }
 
@@ -81,33 +83,27 @@ void* convoluteRow(void* arg) {
 // NEW FUNCTION
 
 // NEW FUNCTION
-void convolute(Image* srcImage, Image* destImage, Matrix algorithm) {
-    int row, span;
+void convolute(Image* srcImage, Image* destImage, Matrix algorithm, int index) {
+    int span;
     span = srcImage->bpp * srcImage->bpp;
+    tArgs.srcImage = srcImage;
+    tArgs.destImage = destImage;
+    tArgs.type = index;
 
     // Create an array of thread handles
     pthread_t* threads = (pthread_t*)malloc(srcImage->height * sizeof(pthread_t));
 
-    // Create an array of thread arguments
-    struct ThreadArg* tArgs = (struct ThreadArg*)malloc(srcImage->height * sizeof(struct ThreadArg));
-
     // Start the threads
-    for (row = 0; row < srcImage->height; row++) {
-        tArgs[row].srcImage = srcImage;
-        tArgs[row].destImage = destImage;
-        tArgs[row].algorithm = algorithm;
-        tArgs[row].row = row;
-
-        pthread_create(&threads[row], NULL, convoluteRow, &tArgs[row]);
+    for (long row = 0; row < srcImage->height; row++) {
+        pthread_create(&threads[row], NULL, convoluteRow, (void*)row);
     }
 
     // Wait for the threads to finish
-    for (row = 0; row < srcImage->height; row++) {
+    for (long row = 0; row < srcImage->height; row++) {
         pthread_join(threads[row], NULL);
     }
 
     free(threads);
-    free(tArgs);
 }
 // NEW FUNCITON
 
@@ -173,7 +169,7 @@ int main(int argc,char** argv){
     destImage.height=srcImage.height;
     destImage.width=srcImage.width;
     destImage.data=malloc(sizeof(uint8_t)*destImage.width*destImage.bpp*destImage.height);
-    convolute(&srcImage,&destImage,algorithms[type]);
+    convolute(&srcImage,&destImage,NULL,type);
     stbi_write_png("output.png",destImage.width,destImage.height,destImage.bpp,destImage.data,destImage.bpp*destImage.width);
     stbi_image_free(srcImage.data);
     
